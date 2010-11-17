@@ -1,0 +1,7 @@
+JMLbot is a MSN chatbot framework written in jython that makes use of
+the java messenger library (http://jml.blathersource.org/). Based on the
+orignal work by Nathan Stehr (nstehr@gmail.com).
+
+
+Updated :: 11/17/2010
+
