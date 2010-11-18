@@ -1,3 +1,5 @@
+#!/usr/bin/env jython
+
 ### JMLbot is a MSN chatbot framework written in jython that makes use of 
 ### the java messenger library (http://jml.blathersource.org/). Based on the
 ### orignal work by Nathan Stehr (nstehr@gmail.com). 
@@ -17,9 +19,10 @@ import urllib
 import getopt
 import ConfigParser
 
+
 #setup the path and add JML
 current_path= os.getcwd()
-sys.path.append(os.path.join(current_path,'jml-1.0b3-full.jar'))
+sys.path.append(os.path.join(current_path,'jml-1.05b-full_http.jar'))
 from net.sf.jml import MsnMessenger
 from net.sf.jml import MsnUserStatus
 from net.sf.jml.impl import MsnMessengerFactory
@@ -31,6 +34,9 @@ from net.sf.jml.message import MsnInstantMessage
 from net.sf.jml import MsnContact
 from net.sf.jml import Email
 from net.sf.jml import MsnFileTransfer
+from net.sf.jml import MsnObject
+from net.sf.jml import MsnProtocol
+from org.apache.http.params import HttpParams
 
 
 
@@ -40,8 +46,11 @@ class MSNEventHandler(MsnAdapter):
         receivedText = message.getContent()
         #set the switchboard, so that we can send messages
         self.switchboard = switchboard
+        
+        # For later ?
+        # net.sf.jml.message.MsnControlMessage
 
-        ext_handler = Config.get('main','event_handler') + " "
+        ext_handler = Config.get('System','event_handler') + " "
         contact_id = str(contact.getEmail()) + " "
         contact_name = str(contact.getFriendlyName()) + " "
 
@@ -68,20 +77,34 @@ class MSNMessenger:
         messenger.addMessageListener(listener)
         messenger.addFileTransferListener(listener)
         messenger.addContactListListener(listener)        
-        
+    
+    def PostLoginSetup(self,messenger):     
+        # net.sf.jml.protocol.outgoing.OutgoingUUX
+        # Lets do some client setup before moving on
+        delay = Config.get('System','login_delay')
+        time.sleep(int(delay))
+        # Set Status
+        messenger.getOwner().setInitStatus(MsnUserStatus.ONLINE)
+        # Set screen name
+        bot_screenname      = Config.get('Details','screenname') 
+        messenger.getOwner().setDisplayName(bot_screenname)
+        # Set avatar
+        bot_avatar = Config.get('Details','avatar')
+        displayPicture = MsnObject.getInstance(messenger.getOwner().getEmail().getEmailAddress(), bot_avatar) 
+        messenger.getOwner().setInitDisplayPicture(displayPicture)
 		
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
-        messenger.getOwner().setInitStatus(MsnUserStatus.ONLINE)
         self.initMessenger(messenger)     
         print "   Logging in and setting screenname .."
-        messenger.login()
-        time.sleep( 3 )
-        bot_screenname      = Config.get('main','screenname') 
-        messenger.getOwner().setDisplayName(bot_screenname)
+        try:
+           messenger.login()
+        except:
+           print "There was an error with login. Aborting.."
+           sys.exit(100)
+        MSNMessenger.PostLoginSetup(self,messenger)
 
-
-        
+           
 class MSNConnector:
     def connect(self,username,password):
         messenger = MSNMessenger()
@@ -108,8 +131,8 @@ def LoadConfig(config_file):
 
 def start():
     connector = MSNConnector()
-    bot_username        = Config.get('main','username')
-    bot_password        = Config.get('main','password') 
+    bot_username        = Config.get('Account','username')
+    bot_password        = Config.get('Account','password') 
     connector.connect(bot_username,bot_password)
     print "   Login complete. Listening for events.."    
 
