@@ -33,9 +33,11 @@ from net.sf.jml.message import MsnDatacastMessage
 from net.sf.jml.message import MsnInstantMessage
 from net.sf.jml import MsnContact
 from net.sf.jml import Email
-from net.sf.jml import MsnFileTransfer
 from net.sf.jml import MsnObject
+
+#from net.sf.jml import MsnFileTransfer
 from net.sf.jml import MsnProtocol
+#from net.sf.jml.message import MsnControlMessage
 from org.apache.http.params import HttpParams
 
 
@@ -46,16 +48,19 @@ class MSNEventHandler(MsnAdapter):
         receivedText = message.getContent()
         #set the switchboard, so that we can send messages
         self.switchboard = switchboard
-        
-        # For later ?
-        # net.sf.jml.message.MsnControlMessage
-
+ 
         ext_handler = Config.get('System','event_handler') + " "
         contact_id = str(contact.getEmail()) + " "
         contact_name = str(contact.getFriendlyName()) + " "
 
         cmdline = ext_handler + contact_id + receivedText
         output = os.popen(cmdline).read()
+
+        # Send typing notify        
+        typingMessage = MsnControlMessage()
+        typingMessage.setTypingUser(switchboard.getMessenger().getOwner().getDisplayName());
+        self.sendMessage(typingMessage)
+        time.sleep(2)
 
         #send the msg to the buddy        
         msnMessage = MsnInstantMessage()
@@ -79,12 +84,9 @@ class MSNMessenger:
         messenger.addContactListListener(listener)        
     
     def PostLoginSetup(self,messenger):     
-        # net.sf.jml.protocol.outgoing.OutgoingUUX
         # Lets do some client setup before moving on
         delay = Config.get('System','login_delay')
         time.sleep(int(delay))
-        # Set Status
-        messenger.getOwner().setInitStatus(MsnUserStatus.ONLINE)
         # Set screen name
         bot_screenname      = Config.get('Details','screenname') 
         messenger.getOwner().setDisplayName(bot_screenname)
@@ -92,7 +94,12 @@ class MSNMessenger:
         bot_avatar = Config.get('Details','avatar')
         displayPicture = MsnObject.getInstance(messenger.getOwner().getEmail().getEmailAddress(), bot_avatar) 
         messenger.getOwner().setInitDisplayPicture(displayPicture)
-		
+        # Set personal messenage
+        statusmsg = Config.get('Details','status_message')
+        messenger.getOwner().setPersonalMessage(statusmsg)
+        # Set Status
+        messenger.getOwner().setInitStatus(MsnUserStatus.ONLINE)
+ 		
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
         self.initMessenger(messenger)     
