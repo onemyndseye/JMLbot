@@ -19,6 +19,8 @@ import urllib
 import getopt
 import ConfigParser
 
+#from net.sf.jml import MsnFileTransfer
+#from net.sf.jml.message import MsnControlMessage
 
 #setup the path and add JML
 current_path= os.getcwd()
@@ -34,10 +36,7 @@ from net.sf.jml.message import MsnInstantMessage
 from net.sf.jml import MsnContact
 from net.sf.jml import Email
 from net.sf.jml import MsnObject
-
-#from net.sf.jml import MsnFileTransfer
 from net.sf.jml import MsnProtocol
-#from net.sf.jml.message import MsnControlMessage
 from org.apache.http.params import HttpParams
 
 
@@ -55,12 +54,13 @@ class MSNEventHandler(MsnAdapter):
 
         cmdline = ext_handler + contact_id + receivedText
         output = os.popen(cmdline).read()
-
-        # Send typing notify        
-        typingMessage = MsnControlMessage()
-        typingMessage.setTypingUser(switchboard.getMessenger().getOwner().getDisplayName());
-        self.sendMessage(typingMessage)
-        time.sleep(2)
+        
+        if Config.get('System','send_typing') == "yes":
+          # Send typing notify        
+          typingMessage = MsnControlMessage()
+          typingMessage.setTypingUser(switchboard.getMessenger().getOwner().getDisplayName());
+          self.sendMessage(typingMessage)
+          time.sleep(2)
 
         #send the msg to the buddy        
         msnMessage = MsnInstantMessage()
@@ -84,30 +84,52 @@ class MSNMessenger:
         messenger.addContactListListener(listener)        
     
     def PostLoginSetup(self,messenger):     
+        print "   Setting up bot indenity ..."
         # Lets do some client setup before moving on
         delay = Config.get('System','login_delay')
+        print "      Waiting " + delay + "secs for connection to settle ..."
         time.sleep(int(delay))
         # Set screen name
         bot_screenname      = Config.get('Details','screenname') 
+        print "      Setting screen name to " + bot_screenname + " ..."
         messenger.getOwner().setDisplayName(bot_screenname)
         # Set avatar
         bot_avatar = Config.get('Details','avatar')
+        print "      Setting avatar using " + bot_avatar + " ..."
         displayPicture = MsnObject.getInstance(messenger.getOwner().getEmail().getEmailAddress(), bot_avatar) 
         messenger.getOwner().setInitDisplayPicture(displayPicture)
         # Set personal messenage
+        print "      Setting status message ..."
         statusmsg = Config.get('Details','status_message')
         messenger.getOwner().setPersonalMessage(statusmsg)
         # Set Status
-        messenger.getOwner().setInitStatus(MsnUserStatus.ONLINE)
+        initStatus = Config.get('Details', 'status')
+        print "      Setting status to " + initStatus + " ..."
+        if initStatus == "away":
+           BotStatus = MsnUserStatus.AWAY
+        elif initStatus == "busy":
+           BotStatus = MsnUserStatus.BUSY
+        elif initStatus == "hide":
+           BotStatus = MsnUserStatus.HIDE
+        elif initStatus == "brb":
+           BotStatus = MsnUserStatus.BE_RIGHT_BACK
+        elif initStatus == "phone":
+           BotStatus = MsnUserStatus.ON_THE_PHONE
+        elif initStatus == "lunch":
+           BotStatus = MsnUserStatus.OUT_TO_LUNCH
+        else:
+           # Default to online
+           BotStatus = MsnUserStatus.ONLINE        
+        messenger.getOwner().setInitStatus(BotStatus)
  		
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
         self.initMessenger(messenger)     
-        print "   Logging in and setting screenname .."
+        print "   Connecting ..."
         try:
            messenger.login()
         except:
-           print "There was an error with login. Aborting.."
+           print "   Login failed. Aborting ..."
            sys.exit(100)
         MSNMessenger.PostLoginSetup(self,messenger)
 
@@ -141,7 +163,7 @@ def start():
     bot_username        = Config.get('Account','username')
     bot_password        = Config.get('Account','password') 
     connector.connect(bot_username,bot_password)
-    print "   Login complete. Listening for events.."    
+    print "Initializing complete.  Listening for events.."    
 
 def main(argv):
     global config_file
