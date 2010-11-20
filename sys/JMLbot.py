@@ -51,9 +51,6 @@ class MSNEventHandler(MsnAdapter):
         ext_handler = Config.get('System','event_handler') + " "
         contact_id = str(contact.getEmail()) + " "
         contact_name = str(contact.getFriendlyName()) + " "
-
-        cmdline = ext_handler + contact_id + receivedText
-        output = os.popen(cmdline).read()
         
         if Config.get('System','send_typing') == "yes":
           # Send typing notify        
@@ -62,11 +59,13 @@ class MSNEventHandler(MsnAdapter):
           self.sendMessage(typingMessage)
           time.sleep(2)
 
+        cmdline = ext_handler + contact_id + "'" + receivedText + "'"
+        output = os.popen(cmdline).read()
+
         #send the msg to the buddy        
         msnMessage = MsnInstantMessage()
         msnMessage.setContent(output)
         self.sendMessage(msnMessage)
-    
 
     def contactAddedMe(self,messenger,contact):
         messenger.addFriend(contact.getEmail(),contact.getFriendlyName())
@@ -80,7 +79,6 @@ class MSNMessenger:
         print "Initializing...."
         listener = MSNEventHandler()
         messenger.addMessageListener(listener)
-        messenger.addFileTransferListener(listener)
         messenger.addContactListListener(listener)        
     
     def PostLoginSetup(self,messenger):     
@@ -105,6 +103,7 @@ class MSNMessenger:
         # Set Status
         initStatus = Config.get('Details', 'status')
         print "      Setting status to " + initStatus + " ..."
+        global BotStatus
         if initStatus == "away":
            BotStatus = MsnUserStatus.AWAY
         elif initStatus == "busy":
@@ -121,7 +120,8 @@ class MSNMessenger:
            # Default to online
            BotStatus = MsnUserStatus.ONLINE        
         messenger.getOwner().setInitStatus(BotStatus)
- 		
+
+
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
         self.initMessenger(messenger)     
