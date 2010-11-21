@@ -18,6 +18,9 @@ from time import sleep
 import urllib
 import getopt
 import ConfigParser
+import random
+import linecache
+import threading
 
 #from net.sf.jml import MsnFileTransfer
 #from net.sf.jml.message import MsnControlMessage
@@ -40,7 +43,6 @@ from net.sf.jml import MsnProtocol
 from org.apache.http.params import HttpParams
 
 
-
 class MSNEventHandler(MsnAdapter):
     #overridden call back functions
     def instantMessageReceived(self, switchboard,message,contact):
@@ -48,10 +50,12 @@ class MSNEventHandler(MsnAdapter):
         #set the switchboard, so that we can send messages
         self.switchboard = switchboard
  
+        if Config.get('System', 'auto_idle_events') == "yes":
+          setIdleTimer.stop()
         ext_handler = Config.get('System','event_handler') + " "
         contact_id = str(contact.getEmail()) + " "
         contact_name = str(contact.getFriendlyName()) + " "
-        
+
         if Config.get('System','send_typing') == "yes":
           # Send typing notify        
           typingMessage = MsnControlMessage()
@@ -66,6 +70,8 @@ class MSNEventHandler(MsnAdapter):
         msnMessage = MsnInstantMessage()
         msnMessage.setContent(output)
         self.sendMessage(msnMessage)
+        if Config.get('System', 'auto_idle_events') == "yes":
+          setIdleTimer.start()
 
     def contactAddedMe(self,messenger,contact):
         messenger.addFriend(contact.getEmail(),contact.getFriendlyName())
@@ -73,13 +79,57 @@ class MSNEventHandler(MsnAdapter):
      #non overridden functions
     def sendMessage(self,message):
         self.switchboard.sendMessage(message)
-        
+
+class RandomStatus(threading.Thread):
+    def __init__ (self, messenger,Config):
+       self.messenger = messenger
+       self.Config = Config
+       threading.Thread.__init__ (self)
+     
+    def run(self):
+       status_sleep = self.Config.get('Details','status_time')
+       status_file = self.Config.get('Details','status_file')
+       status_num_lines = sum(1 for line in open(status_file))
+       while True:
+           statusmsg = linecache.getline(status_file, random.randint(1,status_num_lines))
+           self.messenger.getOwner().setPersonalMessage(statusmsg)
+           time.sleep(int(status_sleep))      
+
+class IdleStatus(threading.Thread):
+    def __init__ (self, messenger,Config,BotStatus):
+       self.messenger = messenger
+       self.Config = Config
+       self.BotStatus = BotStatus
+       self._stopevent = threading.Event()
+       threading.Thread.__init__ (self,name="idleCounter")
+     
+    def run(self):
+       idle_time = self.Config.get('System','idle_time')
+       away_time = self.Config.get('System','away_time')
+       self._stopevent.clear()
+       count = 0
+       while not self._stopevent.isSet():
+           count += 1
+           if count == int(idle_time):
+              self.messenger.getOwner().setStatus(MsnUserStatus.IDLE)
+           elif count == int(away_time):
+              self.messenger.getOwner().setStatus(MsnUserStatus.AWAY)
+           time.sleep(1)       
+       threading.Thread.__init__(self)
+
+    def stop(self):
+        self.messenger.getOwner().setStatus(self.BotStatus)
+        self._stopevent.set()
+        threading.Thread.join(self, timeout=0.1)
+        self.join()        
+
 class MSNMessenger:
     def initMessenger(self,messenger):
         print "Initializing...."
         listener = MSNEventHandler()
         messenger.addMessageListener(listener)
         messenger.addContactListListener(listener)        
+
     
     def PostLoginSetup(self,messenger):     
         print "   Setting up bot indenity ..."
@@ -96,14 +146,17 @@ class MSNMessenger:
         print "      Setting avatar using " + bot_avatar + " ..."
         displayPicture = MsnObject.getInstance(messenger.getOwner().getEmail().getEmailAddress(), bot_avatar) 
         messenger.getOwner().setInitDisplayPicture(displayPicture)
-        # Set personal messenage
-        print "      Setting status message ..."
-        statusmsg = Config.get('Details','status_message')
-        messenger.getOwner().setPersonalMessage(statusmsg)
+        # Set personal message
+        if Config.get('Details','random_status') == "yes":
+           print "      Setting random status message ..."
+           RandomStatus(messenger,Config).start()
+        else:
+           print "      Setting status message ..."
+           statusmsg = Config.get('Details','status_message')
+           messenger.getOwner().setPersonalMessage(statusmsg)
         # Set Status
         initStatus = Config.get('Details', 'status')
         print "      Setting status to " + initStatus + " ..."
-        global BotStatus
         if initStatus == "away":
            BotStatus = MsnUserStatus.AWAY
         elif initStatus == "busy":
@@ -120,8 +173,12 @@ class MSNMessenger:
            # Default to online
            BotStatus = MsnUserStatus.ONLINE        
         messenger.getOwner().setInitStatus(BotStatus)
+        if Config.get('System', 'auto_idle_events') == "yes":
+          global setIdleTimer
+          setIdleTimer = IdleStatus(messenger,Config,BotStatus)
+          setIdleTimer.start()        
 
-
+        
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
         self.initMessenger(messenger)     
@@ -142,8 +199,8 @@ class MSNConnector:
 
 def usage():
     output = "Usage: \n"
-    output = output + "-c/--config <file>  :::   Specify JMLbot config file \n"
-    output = output + "-h/--help           :::   This message \n"
+    output = output + "--config <file>    :::   Specify JMLbot config file \n"
+    output = output + "-h/--help          :::   This message \n"
     output = output + "\n"
     print output                     
 
@@ -163,7 +220,7 @@ def start():
     bot_username        = Config.get('Account','username')
     bot_password        = Config.get('Account','password') 
     connector.connect(bot_username,bot_password)
-    print "Initializing complete.  Listening for events.."    
+    print "Initializing complete.  Listening for events ..."    
 
 def main(argv):
     global config_file
