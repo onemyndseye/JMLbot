@@ -8,6 +8,7 @@ if [ -n "$JAVA" ]; then
   CONFIG="${BASE_DIR}/jmlbot.conf"
   PIDFILE="${BASE_DIR}/JMLbot.pid"
   NAME=JMLbot
+  MEM=16
   cd ${BASE_DIR}/sys/
 else
   echo "Java not found! Aborting ..."
@@ -19,7 +20,7 @@ fi
 case "$1" in
           start)
                echo -n "Starting ${NAME} .."
-               java -jar jython.jar ${NAME}.py --config "$CONFIG" 2>&1 >/dev/null &
+               java -Xmx${MEM}m -jar jython.jar ${NAME}.py --config "$CONFIG" 2>&1 >/dev/null &
                PID=$!
                echo ".... done. [${PID}]"
                ;;

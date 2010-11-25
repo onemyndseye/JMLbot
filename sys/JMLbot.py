@@ -22,9 +22,6 @@ import random
 import linecache
 import threading
 
-#from net.sf.jml import MsnFileTransfer
-#from net.sf.jml.message import MsnControlMessage
-
 #setup the path and add JML
 current_path= os.getcwd()
 sys.path.append(os.path.join(current_path,'jml-1.05b-full_http.jar'))
@@ -76,24 +73,63 @@ class MSNEventHandler(MsnAdapter):
     def contactAddedMe(self,messenger,contact):
         messenger.addFriend(contact.getEmail(),contact.getFriendlyName())
         
-     #non overridden functions
+    #non overridden functions
     def sendMessage(self,message):
         self.switchboard.sendMessage(message)
+
+
+
+class msnWatchDog(threading.Thread):
+    def __init__ (self,messenger):
+       self.messenger = messenger
+       self._stopevent = threading.Event()
+       threading.Thread.__init__ (self,name="msnWatchdog")
+
+    def run(self):
+       while 1:
+           if str(self.messenger.getConnection()) == "None":
+             print "\n My connection died. Will attempt to restart ..."
+             print "     Closing active threads ..."
+             setIdleTimer.stop()
+             setStatusTimer.stop()
+             print "     Restarting ..."
+             start()
+             threading.Thread.__init__(self)
+             sys.exit()
+           else:
+             sleep(10)
+
 
 class RandomStatus(threading.Thread):
     def __init__ (self, messenger,Config):
        self.messenger = messenger
        self.Config = Config
+       self._stopevent = threading.Event()
        threading.Thread.__init__ (self)
      
     def run(self):
        status_sleep = self.Config.get('Details','status_time')
        status_file = self.Config.get('Details','status_file')
        status_num_lines = sum(1 for line in open(status_file))
-       while True:
-           statusmsg = linecache.getline(status_file, random.randint(1,status_num_lines))
-           self.messenger.getOwner().setPersonalMessage(statusmsg)
-           time.sleep(int(status_sleep))      
+       self._stopevent.clear()
+       statusmsg = linecache.getline(status_file, random.randint(1,status_num_lines))
+       self.messenger.getOwner().setPersonalMessage(statusmsg)
+       count = 0
+       while not self._stopevent.isSet():
+           count += 1
+           if count == int(status_sleep):
+             statusmsg = linecache.getline(status_file, random.randint(1,status_num_lines))
+             self.messenger.getOwner().setPersonalMessage(statusmsg)
+             # Reset the counter
+             count = 0
+           time.sleep(1)      
+       threading.Thread.__init__(self)
+
+    def stop(self):
+        self._stopevent.set()
+        threading.Thread.join(self, timeout=0.1)
+        self.join()        
+
 
 class IdleStatus(threading.Thread):
     def __init__ (self, messenger,Config,BotStatus):
@@ -132,6 +168,8 @@ class MSNMessenger:
 
     
     def PostLoginSetup(self,messenger):     
+        # Hide until we are ready to take events
+        messenger.getOwner().setInitStatus(MsnUserStatus.HIDE)
         print "   Setting up bot indenity ..."
         # Lets do some client setup before moving on
         delay = Config.get('System','login_delay')
@@ -149,7 +187,9 @@ class MSNMessenger:
         # Set personal message
         if Config.get('Details','random_status') == "yes":
            print "      Setting random status message ..."
-           RandomStatus(messenger,Config).start()
+           global setStatusTimer
+           setStatusTimer = RandomStatus(messenger,Config)
+           setStatusTimer.start()
         else:
            print "      Setting status message ..."
            statusmsg = Config.get('Details','status_message')
@@ -172,12 +212,12 @@ class MSNMessenger:
         else:
            # Default to online
            BotStatus = MsnUserStatus.ONLINE        
-        messenger.getOwner().setInitStatus(BotStatus)
+        messenger.getOwner().setStatus(BotStatus)
         if Config.get('System', 'auto_idle_events') == "yes":
           global setIdleTimer
           setIdleTimer = IdleStatus(messenger,Config,BotStatus)
-          setIdleTimer.start()        
-
+          setIdleTimer.start()
+          msnWatchDog(messenger).start()        
         
     def connect(self,email,password):
         messenger = MsnMessengerFactory.createMsnMessenger(email,password)
@@ -204,6 +244,7 @@ def usage():
     output = output + "\n"
     print output                     
 
+
 def LoadConfig(config_file):
     if os.path.exists(config_file):
        load_msg = "Using config file: " + config_file
@@ -222,11 +263,11 @@ def start():
     connector.connect(bot_username,bot_password)
     print "Initializing complete.  Listening for events ..."    
 
+
 def main(argv):
-    global config_file
     config_file=""
     try:                                
-       opts, args = getopt.getopt(argv, "h", ["help", "config="])
+        opts, args = getopt.getopt(argv, "h", ["help", "config="])
     except getopt.GetoptError:          
         usage()                         
         sys.exit(2)                     
@@ -236,19 +277,17 @@ def main(argv):
             sys.exit()                  
         elif opt in ("--config"): 
             config_file = arg               
-
+        
     if config_file:
         LoadConfig(config_file)
     else:
-       print "Please give a config file to load. see --help\n"
-       sys.exit(1)
+        print "Please give a config file to load. see --help\n"
+        sys.exit(1)
 
     start()
     while 1:
-        sleep(10)
-
-
-
+          time.sleep(10)
+     
 if __name__ == "__main__":
     main(sys.argv[1:])
 
